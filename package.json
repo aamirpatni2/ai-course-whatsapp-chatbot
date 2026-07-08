@@ -1,0 +1,15 @@
+{
+  "name": "ai-course-whatsapp-chatbot",
+  "version": "1.0.0",
+  "description": "WhatsApp auto-reply chatbot for the Complete Practical AI Training Program.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-bot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}
