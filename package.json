@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node test-bot.js"
+    "test": "node test-bot.js",
+    "seed": "node scripts/seed-sample-data.js"
   },
   "engines": {
     "node": ">=18"
