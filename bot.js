@@ -18,22 +18,31 @@ function normalizeText(text) {
     .trim();
 }
 
-export function getBotReply(message) {
+export function classifyMessage(message) {
   const normalized = normalizeText(message);
 
   if (!normalized) {
-    return replies.greeting;
+    return "greeting";
   }
 
   if (menuMap[normalized]) {
-    return replies[menuMap[normalized]];
+    return menuMap[normalized];
   }
 
   for (const rule of keywordRules) {
     if (rule.keywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) {
-      return replies[rule.reply];
+      return rule.reply;
     }
   }
 
-  return replies.fallback;
+  return "fallback";
+}
+
+export function getBotReplyDetailed(message) {
+  const category = classifyMessage(message);
+  return { category, reply: replies[category] };
+}
+
+export function getBotReply(message) {
+  return getBotReplyDetailed(message).reply;
 }

@@ -1,7 +1,18 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { getBotReply } from "./bot.js";
+import { getBotReplyDetailed } from "./bot.js";
+import {
+  addConversation,
+  listConversations,
+  listStudents,
+  addStudent,
+  updateStudent,
+  deleteStudent
+} from "./data/store.js";
+import { getEditableContent, updateContent } from "./knowledge-base.js";
+import { renderAdminPage } from "./admin-page.js";
 
 function loadEnvFile() {
   const envPath = path.join(process.cwd(), ".env");
@@ -40,6 +51,41 @@ const PORT = Number(process.env.PORT || 3000);
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "change-this-verify-token";
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+
+if (!process.env.ADMIN_PASSWORD) {
+  console.warn(
+    "Warning: ADMIN_PASSWORD is not set. Using default 'admin123'. Set ADMIN_PASSWORD before deploying."
+  );
+}
+
+const activeSessions = new Set();
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  const cookies = {};
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const index = trimmed.indexOf("=");
+    if (index === -1) continue;
+    cookies[trimmed.slice(0, index)] = decodeURIComponent(trimmed.slice(index + 1));
+  }
+  return cookies;
+}
+
+function isAuthed(req) {
+  const cookies = parseCookies(req);
+  return Boolean(cookies.admin_session && activeSessions.has(cookies.admin_session));
+}
+
+function requireAuth(req, res) {
+  if (isAuthed(req)) {
+    return true;
+  }
+  sendJson(res, 401, { error: "Unauthorized" });
+  return false;
+}
 
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -143,8 +189,15 @@ const server = http.createServer(async (req, res) => {
       const messages = extractIncomingMessages(body);
 
       for (const message of messages) {
-        const reply = getBotReply(message.text);
+        const { reply, category } = getBotReplyDetailed(message.text);
         await sendWhatsAppMessage(message.from, reply);
+        addConversation({
+          from: message.from,
+          channel: "whatsapp",
+          text: message.text,
+          reply,
+          category
+        });
       }
 
       sendJson(res, 200, { ok: true, processed: messages.length });
@@ -158,7 +211,15 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && url.pathname === "/chat") {
     try {
       const body = await readRequestBody(req);
-      sendJson(res, 200, { reply: getBotReply(body.message) });
+      const { reply, category } = getBotReplyDetailed(body.message);
+      addConversation({
+        from: "web-widget",
+        channel: "web",
+        text: body.message,
+        reply,
+        category
+      });
+      sendJson(res, 200, { reply });
     } catch (error) {
       console.error(error);
       sendJson(res, 500, { error: "Chat failed" });
@@ -232,6 +293,143 @@ const server = http.createServer(async (req, res) => {
   </script>
 </body>
 </html>`);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/admin") {
+    sendHtml(res, renderAdminPage());
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/admin/login") {
+    try {
+      const body = await readRequestBody(req);
+      if (body.password !== ADMIN_PASSWORD) {
+        sendJson(res, 401, { error: "Invalid password" });
+        return;
+      }
+      const token = crypto.randomBytes(24).toString("hex");
+      activeSessions.add(token);
+      res.setHeader(
+        "Set-Cookie",
+        `admin_session=${token}; HttpOnly; Path=/; SameSite=Lax`
+      );
+      sendJson(res, 200, { ok: true });
+    } catch (error) {
+      console.error(error);
+      sendJson(res, 500, { error: "Login failed" });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/admin/logout") {
+    const cookies = parseCookies(req);
+    if (cookies.admin_session) {
+      activeSessions.delete(cookies.admin_session);
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (url.pathname === "/admin/api/stats" && req.method === "GET") {
+    if (!requireAuth(req, res)) return;
+    const conversations = listConversations();
+    const today = new Date().toISOString().slice(0, 10);
+    const messagesToday = conversations.filter((c) => c.timestamp.startsWith(today)).length;
+    const uniqueContacts = new Set(conversations.map((c) => c.from)).size;
+    const fallbackCount = conversations.filter((c) => c.category === "fallback").length;
+    const categoryCounts = {};
+    for (const c of conversations) {
+      categoryCounts[c.category] = (categoryCounts[c.category] || 0) + 1;
+    }
+    const topCategories = Object.entries(categoryCounts)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count);
+
+    sendJson(res, 200, {
+      totalMessages: conversations.length,
+      messagesToday,
+      uniqueContacts,
+      fallbackRate: conversations.length
+        ? Math.round((fallbackCount / conversations.length) * 100)
+        : 0,
+      totalStudents: listStudents().length,
+      topCategories
+    });
+    return;
+  }
+
+  if (url.pathname === "/admin/api/conversations" && req.method === "GET") {
+    if (!requireAuth(req, res)) return;
+    sendJson(res, 200, listConversations());
+    return;
+  }
+
+  if (url.pathname === "/admin/api/students" && req.method === "GET") {
+    if (!requireAuth(req, res)) return;
+    sendJson(res, 200, listStudents());
+    return;
+  }
+
+  if (url.pathname === "/admin/api/students" && req.method === "POST") {
+    if (!requireAuth(req, res)) return;
+    try {
+      const body = await readRequestBody(req);
+      const student = addStudent(body);
+      sendJson(res, 201, student);
+    } catch (error) {
+      console.error(error);
+      sendJson(res, 500, { error: "Failed to add student" });
+    }
+    return;
+  }
+
+  if (url.pathname.startsWith("/admin/api/students/") && req.method === "PUT") {
+    if (!requireAuth(req, res)) return;
+    const id = url.pathname.slice("/admin/api/students/".length);
+    try {
+      const body = await readRequestBody(req);
+      const student = updateStudent(id, body);
+      if (!student) {
+        sendJson(res, 404, { error: "Student not found" });
+        return;
+      }
+      sendJson(res, 200, student);
+    } catch (error) {
+      console.error(error);
+      sendJson(res, 500, { error: "Failed to update student" });
+    }
+    return;
+  }
+
+  if (url.pathname.startsWith("/admin/api/students/") && req.method === "DELETE") {
+    if (!requireAuth(req, res)) return;
+    const id = url.pathname.slice("/admin/api/students/".length);
+    const deleted = deleteStudent(id);
+    if (!deleted) {
+      sendJson(res, 404, { error: "Student not found" });
+      return;
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (url.pathname === "/admin/api/content" && req.method === "GET") {
+    if (!requireAuth(req, res)) return;
+    sendJson(res, 200, getEditableContent());
+    return;
+  }
+
+  if (url.pathname === "/admin/api/content" && req.method === "PUT") {
+    if (!requireAuth(req, res)) return;
+    try {
+      const body = await readRequestBody(req);
+      const updated = updateContent(body);
+      sendJson(res, 200, updated);
+    } catch (error) {
+      console.error(error);
+      sendJson(res, 500, { error: "Failed to update content" });
+    }
     return;
   }
 
