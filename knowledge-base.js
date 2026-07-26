@@ -1,3 +1,5 @@
+import { getContentOverrides, saveContentOverrides } from "./data/store.js";
+
 export const course = {
   name: "Complete Practical AI Training Program - July 2026 Batch",
   fee: "Rs. 5,000",
@@ -135,3 +137,48 @@ export const keywordRules = [
     keywords: ["detail", "details", "course", "کورس", "program", "info", "information", "maloomat"]
   }
 ];
+
+const defaultCourse = { ...course };
+const defaultReplies = { ...replies };
+
+function applyOverrides() {
+  const overrides = getContentOverrides();
+  Object.assign(course, defaultCourse, overrides.course || {});
+  Object.assign(replies, defaultReplies, overrides.replies || {});
+}
+
+applyOverrides();
+
+export function getEditableContent() {
+  return { course: { ...course }, replies: { ...replies } };
+}
+
+export function getDefaultContent() {
+  return { course: { ...defaultCourse }, replies: { ...defaultReplies } };
+}
+
+export function updateContent({ course: courseUpdates, replies: repliesUpdates }) {
+  if (courseUpdates) {
+    Object.assign(course, courseUpdates);
+  }
+  if (repliesUpdates) {
+    Object.assign(replies, repliesUpdates);
+  }
+
+  saveContentOverrides({
+    course: diffFromDefault(course, defaultCourse),
+    replies: diffFromDefault(replies, defaultReplies)
+  });
+
+  return getEditableContent();
+}
+
+function diffFromDefault(current, defaults) {
+  const diff = {};
+  for (const key of Object.keys(current)) {
+    if (JSON.stringify(current[key]) !== JSON.stringify(defaults[key])) {
+      diff[key] = current[key];
+    }
+  }
+  return diff;
+}

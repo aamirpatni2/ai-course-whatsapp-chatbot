@@ -65,10 +65,36 @@ For real WhatsApp use, this bot must be hosted online with HTTPS. Good options a
 
 ## Edit Answers
 
-To change course answers, edit:
+To change default course answers, edit:
 
 ```text
 knowledge-base.js
 ```
 
-You can update fee, timing, account details, topics, and reply wording there.
+You can update fee, timing, account details, topics, and reply wording there. These are the
+defaults the dashboard content editor starts from.
+
+## Admin Dashboard
+
+Open:
+
+```text
+http://localhost:3000/admin
+```
+
+Log in with the `ADMIN_PASSWORD` you set in `.env` (defaults to `admin123` locally if unset —
+always set a real password before deploying). The dashboard has four tabs:
+
+- **Analytics** — total messages, messages today, unique contacts, unanswered (fallback) rate,
+  and the most-asked question categories.
+- **Conversations** — a log of every WhatsApp and web-widget message with the bot's reply and
+  matched category.
+- **Students** — a simple list of registered students with name, contact, and payment status
+  (pending/paid) you can add, toggle, and delete.
+- **Course Content** — edit the fee, class days/time, duration, topics, and the bot's reply text
+  for fee/timing/payment/registration/recordings/fallback. Changes apply immediately to live bot
+  replies.
+
+Data (conversations, students, content edits) is stored in `data/db.json`, a plain JSON file —
+there's no external database to set up. On hosts with ephemeral disks (e.g. Render's free plan),
+this file resets on redeploy, so treat it as working data, not a permanent record.
