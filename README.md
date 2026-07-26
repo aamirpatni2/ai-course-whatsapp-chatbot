@@ -98,3 +98,14 @@ always set a real password before deploying). The dashboard has four tabs:
 Data (conversations, students, content edits) is stored in `data/db.json`, a plain JSON file —
 there's no external database to set up. On hosts with ephemeral disks (e.g. Render's free plan),
 this file resets on redeploy, so treat it as working data, not a permanent record.
+
+### Try It With Sample Data
+
+To see the dashboard populated instead of empty, run:
+
+```bash
+npm run seed
+```
+
+This adds a few example WhatsApp conversations and students to `data/db.json`. Safe to run
+against a fresh install; re-running it adds another batch of the same sample entries.
