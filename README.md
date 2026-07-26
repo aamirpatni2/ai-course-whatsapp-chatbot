@@ -83,10 +83,14 @@ http://localhost:3000/admin
 ```
 
 Log in with the `ADMIN_PASSWORD` you set in `.env` (defaults to `admin123` locally if unset —
-always set a real password before deploying). The dashboard has four tabs:
+always set a real password before deploying). The dashboard has five tabs:
 
 - **Analytics** — total messages, messages today, unique contacts, unanswered (fallback) rate,
   and the most-asked question categories.
+- **Marketing** — live Meta Ads spend, impressions, clicks, CTR, cost per click, leads/results, cost
+  per lead, and cost per registered student (ad spend ÷ paid students), with a per-campaign
+  breakdown. Requires `META_ACCESS_TOKEN` and `META_AD_ACCOUNT_ID` (see below) — the tab shows
+  setup instructions until those are configured.
 - **Conversations** — a log of every WhatsApp and web-widget message with the bot's reply and
   matched category.
 - **Students** — a simple list of registered students with name, contact, and payment status
@@ -94,6 +98,22 @@ always set a real password before deploying). The dashboard has four tabs:
 - **Course Content** — edit the fee, class days/time, duration, topics, and the bot's reply text
   for fee/timing/payment/registration/recordings/fallback. Changes apply immediately to live bot
   replies.
+
+### Connect Meta Ads (Marketing Tab)
+
+1. In Meta Business Settings, go to **System Users**, create or open one, and click **Generate
+   New Token** for the ad account you want to track, with the `ads_read` permission.
+2. Find your ad account's numeric ID (in Ads Manager, without the `act_` prefix).
+3. Add to `.env` (or your host's environment variables):
+
+```text
+META_ACCESS_TOKEN=your-generated-token
+META_AD_ACCOUNT_ID=your-ad-account-id
+```
+
+4. Restart the server. The Marketing tab pulls live data directly from Meta's Graph API and
+   caches it for about 15 minutes to stay within API rate limits — use the **Refresh** button in
+   the tab to force an immediate update.
 
 Data (conversations, students, content edits) is stored in `data/db.json`, a plain JSON file —
 there's no external database to set up. On hosts with ephemeral disks (e.g. Render's free plan),

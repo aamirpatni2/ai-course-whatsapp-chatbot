@@ -12,6 +12,7 @@ import {
   deleteStudent
 } from "./data/store.js";
 import { getEditableContent, updateContent } from "./knowledge-base.js";
+import { getMarketingInsights } from "./data/marketing.js";
 import { renderAdminPage } from "./admin-page.js";
 
 function loadEnvFile() {
@@ -429,6 +430,28 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       console.error(error);
       sendJson(res, 500, { error: "Failed to update content" });
+    }
+    return;
+  }
+
+  if (url.pathname === "/admin/api/marketing" && req.method === "GET") {
+    if (!requireAuth(req, res)) return;
+    try {
+      const forceRefresh = url.searchParams.get("refresh") === "1";
+      const insights = await getMarketingInsights({ forceRefresh });
+
+      let costPerRegisteredStudent = null;
+      if (insights.connected && insights.account) {
+        const paidStudents = listStudents().filter((s) => s.paymentStatus === "paid").length;
+        if (paidStudents > 0) {
+          costPerRegisteredStudent = insights.account.spend / paidStudents;
+        }
+      }
+
+      sendJson(res, 200, { ...insights, paidStudents: listStudents().filter((s) => s.paymentStatus === "paid").length, costPerRegisteredStudent });
+    } catch (error) {
+      console.error(error);
+      sendJson(res, 500, { error: "Failed to load marketing data" });
     }
     return;
   }

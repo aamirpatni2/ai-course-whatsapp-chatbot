@@ -41,6 +41,11 @@ export function renderAdminPage() {
     .status-msg { font-size: 13px; margin-top: 8px; }
     .hidden { display: none; }
     .subhead { font-size: 15px; margin: 18px 0 8px; color: #075e54; }
+    .notice { background: #fef9c3; border: 1px solid #fde68a; color: #854d0e; border-radius: 8px; padding: 14px 16px; font-size: 14px; line-height: 1.5; }
+    .notice code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; }
+    .notice.error { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
+    .muted { color: #6b7280; font-size: 12px; }
+    .refresh-btn { background: white; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; float: right; }
   </style>
 </head>
 <body>
@@ -59,12 +64,14 @@ export function renderAdminPage() {
     <main>
       <div class="tabs">
         <button data-tab="analytics" class="active">Analytics</button>
+        <button data-tab="marketing">Marketing</button>
         <button data-tab="conversations">Conversations</button>
         <button data-tab="students">Students</button>
         <button data-tab="content">Course Content</button>
       </div>
 
       <section id="tab-analytics"></section>
+      <section id="tab-marketing" class="hidden"></section>
       <section id="tab-conversations" class="hidden"></section>
       <section id="tab-students" class="hidden"></section>
       <section id="tab-content" class="hidden"></section>
@@ -137,6 +144,7 @@ export function renderAdminPage() {
 
     function loadTab(tab) {
       if (tab === "analytics") loadAnalytics();
+      if (tab === "marketing") loadMarketing();
       if (tab === "conversations") loadConversations();
       if (tab === "students") loadStudents();
       if (tab === "content") loadContent();
@@ -170,6 +178,88 @@ export function renderAdminPage() {
           <table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>\${topCategoriesRows || '<tr><td colspan="2">No data yet.</td></tr>'}</tbody></table>
         </div>
       \`;
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    function formatMoney(value) {
+      return value == null ? "—" : "PKR " + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    async function loadMarketing(forceRefresh) {
+      const el = document.getElementById("tab-marketing");
+      el.innerHTML = "Loading...";
+      const insights = await api("/admin/api/marketing" + (forceRefresh ? "?refresh=1" : ""));
+
+      if (!insights.connected) {
+        el.innerHTML = \`
+          <div class="card">
+            <div class="notice">
+              <strong>Meta Ads isn't connected yet.</strong><br><br>
+              To show live ad spend, leads, and results here, set these environment variables on your
+              host and restart the server:<br><br>
+              <code>META_ACCESS_TOKEN</code> — a Meta access token with <code>ads_read</code> permission
+              (Meta Business Settings → System Users → generate token)<br>
+              <code>META_AD_ACCOUNT_ID</code> — your ad account's numeric ID (without the "act_" prefix)
+            </div>
+          </div>
+        \`;
+        return;
+      }
+
+      if (insights.error) {
+        el.innerHTML = \`
+          <div class="card">
+            <div class="notice error"><strong>Couldn't load Meta Ads data.</strong><br>\${escapeHtml(insights.error)}</div>
+            <button class="refresh-btn" id="retryMarketing">Retry</button>
+          </div>
+        \`;
+        document.getElementById("retryMarketing").addEventListener("click", () => loadMarketing(true));
+        return;
+      }
+
+      const account = insights.account || {};
+      const campaignRows = (insights.campaigns || [])
+        .map(
+          (c) => \`<tr>
+            <td>\${escapeHtml(c.name)}</td>
+            <td>\${formatMoney(c.spend)}</td>
+            <td>\${formatNumber(c.impressions)}</td>
+            <td>\${formatNumber(c.clicks)}</td>
+            <td>\${formatNumber(c.leads)}</td>
+            <td>\${formatMoney(c.costPerLead)}</td>
+          </tr>\`
+        )
+        .join("");
+
+      el.innerHTML = \`
+        <div class="card">
+          <button class="refresh-btn" id="refreshMarketing">Refresh</button>
+          <div class="subhead">Last 30 Days — Ad Account Performance</div>
+          <div class="stat-grid">
+            <div class="stat"><div class="value">\${formatMoney(account.spend)}</div><div class="label">Amount Spent</div></div>
+            <div class="stat"><div class="value">\${formatNumber(account.impressions)}</div><div class="label">Impressions</div></div>
+            <div class="stat"><div class="value">\${formatNumber(account.clicks)}</div><div class="label">Clicks</div></div>
+            <div class="stat"><div class="value">\${account.ctr != null ? account.ctr + "%" : "—"}</div><div class="label">CTR</div></div>
+            <div class="stat"><div class="value">\${formatMoney(account.cpc)}</div><div class="label">Cost per Click</div></div>
+            <div class="stat"><div class="value">\${formatNumber(account.leads)}</div><div class="label">Leads / Results</div></div>
+            <div class="stat"><div class="value">\${formatMoney(account.costPerLead)}</div><div class="label">Cost per Lead</div></div>
+            <div class="stat"><div class="value">\${formatMoney(insights.costPerRegisteredStudent)}</div><div class="label">Cost per Registered Student</div></div>
+          </div>
+          <p class="muted">\${insights.paidStudents} paid student(s) recorded in the Students tab. Cost per registered student = total ad spend ÷ paid students.</p>
+        </div>
+        <div class="card">
+          <div class="subhead">Campaigns</div>
+          <table>
+            <thead><tr><th>Campaign</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>Leads</th><th>Cost / Lead</th></tr></thead>
+            <tbody>\${campaignRows || '<tr><td colspan="6">No campaign data for this period.</td></tr>'}</tbody>
+          </table>
+        </div>
+      \`;
+
+      document.getElementById("refreshMarketing").addEventListener("click", () => loadMarketing(true));
     }
 
     async function loadConversations() {
