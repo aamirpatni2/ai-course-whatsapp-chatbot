@@ -60,7 +60,7 @@ if (!process.env.ADMIN_PASSWORD) {
   );
 }
 
-const activeSessions = new Set();
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function parseCookies(req) {
   const header = req.headers.cookie || "";
@@ -75,9 +75,30 @@ function parseCookies(req) {
   return cookies;
 }
 
+// Stateless signed session token (instead of an in-memory store) so login
+// survives across separate serverless function invocations on hosts like
+// Vercel, where each request can hit a different, short-lived instance.
+function createSessionToken() {
+  const expiry = String(Date.now() + SESSION_TTL_MS);
+  const signature = crypto.createHmac("sha256", ADMIN_PASSWORD).update(expiry).digest("hex");
+  return `${expiry}.${signature}`;
+}
+
+function isValidSessionToken(token) {
+  if (!token) return false;
+  const [expiry, signature] = token.split(".");
+  if (!expiry || !signature) return false;
+  const expected = crypto.createHmac("sha256", ADMIN_PASSWORD).update(expiry).digest("hex");
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(signature);
+  if (expectedBuffer.length !== signatureBuffer.length) return false;
+  if (!crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) return false;
+  return Number(expiry) > Date.now();
+}
+
 function isAuthed(req) {
   const cookies = parseCookies(req);
-  return Boolean(cookies.admin_session && activeSessions.has(cookies.admin_session));
+  return isValidSessionToken(cookies.admin_session);
 }
 
 function requireAuth(req, res) {
@@ -165,7 +186,7 @@ function extractIncomingMessages(body) {
   return messages;
 }
 
-const server = http.createServer(async (req, res) => {
+export async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (req.method === "GET" && url.pathname === "/webhook") {
@@ -309,11 +330,10 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 401, { error: "Invalid password" });
         return;
       }
-      const token = crypto.randomBytes(24).toString("hex");
-      activeSessions.add(token);
+      const token = createSessionToken();
       res.setHeader(
         "Set-Cookie",
-        `admin_session=${token}; HttpOnly; Path=/; SameSite=Lax`
+        `admin_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}`
       );
       sendJson(res, 200, { ok: true });
     } catch (error) {
@@ -324,10 +344,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/admin/logout") {
-    const cookies = parseCookies(req);
-    if (cookies.admin_session) {
-      activeSessions.delete(cookies.admin_session);
-    }
+    res.setHeader("Set-Cookie", "admin_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -457,8 +474,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   sendJson(res, 404, { error: "Not found" });
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`AI course WhatsApp chatbot is running on port ${PORT}`);
-});
+const isDirectRun = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+
+if (isDirectRun) {
+  const server = http.createServer(handleRequest);
+  server.listen(PORT, () => {
+    console.log(`AI course WhatsApp chatbot is running on port ${PORT}`);
+  });
+}

@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// Vercel's deployed source tree is read-only at runtime, so serverless
+// functions there must write to /tmp instead. /tmp isn't guaranteed to
+// persist between invocations, so this is a soft fallback, not durable
+// storage - see the README for connecting a real database when needed.
+const DATA_DIR = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
 function defaultDb() {
