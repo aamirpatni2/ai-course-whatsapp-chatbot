@@ -1,4 +1,4 @@
-import { getBotReply } from "./bot.js";
+import { getBotReply } from "./api/bot.js";
 
 const testQuestions = [
   "Assalam o alaikum",

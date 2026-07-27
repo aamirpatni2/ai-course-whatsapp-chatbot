@@ -1,5 +1,5 @@
-import { addConversation, addStudent, updateStudent, listStudents } from "../data/store.js";
-import { getBotReplyDetailed } from "../bot.js";
+import { addConversation, addStudent, updateStudent, listStudents } from "../api/data/store.js";
+import { getBotReplyDetailed } from "../api/bot.js";
 
 const sampleMessages = [
   { from: "923001234567", text: "Assalam o alaikum" },
