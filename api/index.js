@@ -286,6 +286,44 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  // TEMPORARY diagnostic route — checks WhatsApp token/phone number ID validity
+  // against the Meta Graph API without exposing the secret values. Remove after use.
+  if (req.method === "GET" && url.pathname === "/diag") {
+    const result = {
+      whatsapp_token_present: Boolean(WHATSAPP_TOKEN),
+      phone_number_id_present: Boolean(PHONE_NUMBER_ID),
+      verify_token_present: Boolean(VERIFY_TOKEN),
+    };
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+      result.status = "missing_env_vars";
+      sendJson(res, 200, result);
+      return;
+    }
+
+    try {
+      const metaResponse = await fetch(
+        `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}?fields=display_phone_number,verified_name,quality_rating`,
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
+      const data = await metaResponse.json();
+      result.meta_api_status = metaResponse.status;
+      result.meta_api_ok = metaResponse.ok;
+      if (metaResponse.ok) {
+        result.display_phone_number = data.display_phone_number;
+        result.verified_name = data.verified_name;
+        result.quality_rating = data.quality_rating;
+      } else {
+        result.meta_error = data.error || data;
+      }
+    } catch (error) {
+      result.fetch_error = String(error);
+    }
+
+    sendJson(res, 200, result);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/admin/login") {
     try {
       const body = await readRequestBody(req);
