@@ -16,6 +16,7 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "change-this-verify-token";
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const ADMIN_WHATSAPP_NUMBER = process.env.ADMIN_WHATSAPP_NUMBER;
 
 if (!process.env.ADMIN_PASSWORD) {
   console.warn(
@@ -128,6 +129,24 @@ async function sendWhatsAppMessage(to, text) {
   }
 }
 
+async function forwardToAdmin(message, reply, category) {
+  if (!ADMIN_WHATSAPP_NUMBER) return;
+  const forwardText =
+    `\u{1F4E9} New WhatsApp message\n` +
+    `From: ${message.from}\n` +
+    `Message: ${message.text}\n` +
+    `Category: ${category}\n` +
+    `Bot replied: ${reply}`;
+  try {
+    await sendWhatsAppMessage(ADMIN_WHATSAPP_NUMBER, forwardText);
+  } catch (error) {
+    // Forwarding is best-effort: if the admin hasn't messaged the bot number
+    // within the last 24 hours, WhatsApp blocks free-form business-initiated
+    // messages, so this can fail without affecting the student-facing reply.
+    console.error("Failed to forward message to admin:", error);
+  }
+}
+
 function extractIncomingMessages(body) {
   const messages = [];
   const entries = body.entry || [];
@@ -183,6 +202,7 @@ export async function handleRequest(req, res) {
           reply,
           category
         });
+        await forwardToAdmin(message, reply, category);
       }
 
       sendJson(res, 200, { ok: true, processed: messages.length });
